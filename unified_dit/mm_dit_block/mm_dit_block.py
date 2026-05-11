@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from unified_dit.mm_dit_block.attention import Attention, JointAttention
+from unified_dit.utils.attention import Attention, JointAttention
 
 
 class MMDiTBlock(nn.Module):
@@ -14,20 +14,20 @@ class MMDiTBlock(nn.Module):
 
         # Scale and shift for task and image tokens
         self.scale_and_shift_task1 = AdaLN_Zero(config.hidden_size)
-        self.scale_and_shift_imag1 = AdaLN_Zero(config.hidden_size)
+        self.scale_and_shift_img1 = AdaLN_Zero(config.hidden_size)
 
-        self.attention = JointAttention(
+        self.joint_attention = JointAttention(
             config.hidden_size, num_heads=config.num_attention_heads
         )
 
         self.scale_and_shift_task2 = AdaLN_Zero(config.hidden_size)
-        self.scale_and_shift_imag2 = AdaLN_Zero(config.hidden_size)
+        self.scale_and_shift_img2 = AdaLN_Zero(config.hidden_size)
         
         self.mlp_task = MLP(config.hidden_size, mlp_ratio=config.mlp_ratio)
         self.mlp_image = MLP(config.hidden_size, mlp_ratio=config.mlp_ratio)
         
         self.scale_and_shift_task3 = AdaLN_Zero(config.hidden_size)
-        self.scale_and_shift_imag3 = AdaLN_Zero(config.hidden_size)
+        self.scale_and_shift_img3 = AdaLN_Zero(config.hidden_size)
 
     def forward(
         self,
@@ -40,17 +40,17 @@ class MMDiTBlock(nn.Module):
 
         # shift & scale 1
         task_mod, task_gate = self.scale_and_shift_task1(task_token_norm, time_emb)
-        image_mod, image_gate = self.scale_and_shift_imag1(image_token_norm, time_emb)
+        image_mod, image_gate = self.scale_and_shift_img1(image_token_norm, time_emb)
 
         # Apply gate & residual connection
         task_mod = task_mod * (1 + task_gate.unsqueeze(1)) + task_token
         image_mod = image_mod * (1 + image_gate.unsqueeze(1)) + image_token
 
-        output = self.attention(task_mod, image_mod)
+        output_task, output_image = self.joint_attention(task_mod, image_mod)
 
         # shift & scale 2
-        task_mod, task_gate = self.scale_and_shift_task2(task_token_norm, time_emb)
-        image_mod, image_gate = self.scale_and_shift_imag2(image_token_norm, time_emb)
+        task_mod, task_gate = self.scale_and_shift_task2(output_task, time_emb)
+        image_mod, image_gate = self.scale_and_shift_img2(output_image, time_emb)
 
         # Apply gate & residual connection
         task_mod = task_mod * (1 + task_gate.unsqueeze(1)) + task_token
@@ -61,7 +61,7 @@ class MMDiTBlock(nn.Module):
 
         # shift & scale 3
         task_mod, task_gate = self.scale_and_shift_task3(task_mlp, time_emb)
-        image_mod, image_gate = self.scale_and_shift_imag3(image_mlp, time_emb)
+        image_mod, image_gate = self.scale_and_shift_img3(image_mlp, time_emb)
 
         # Apply gate & residual connection
         task_mod = task_mod * (1 + task_gate.unsqueeze(1)) + task_token
