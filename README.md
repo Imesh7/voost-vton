@@ -12,6 +12,7 @@ Unofficial paper implementation of Voost paper - Virtual try-on & try-off
 
 - MM-DiT block
 - Single DiT block
+- flow matching
 
 ## Citation
 
