@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 
 from unified_dit.utils.attention import Attention, JointAttention
+from unified_dit.utils.mlp import MLP
+from unified_dit.utils.rope import RoPE
 
 
 class MMDiTBlock(nn.Module):
@@ -22,12 +24,14 @@ class MMDiTBlock(nn.Module):
 
         self.scale_and_shift_task2 = AdaLN_Zero(config.hidden_size)
         self.scale_and_shift_img2 = AdaLN_Zero(config.hidden_size)
-        
+
         self.mlp_task = MLP(config.hidden_size, mlp_ratio=config.mlp_ratio)
         self.mlp_image = MLP(config.hidden_size, mlp_ratio=config.mlp_ratio)
-        
+
         self.scale_and_shift_task3 = AdaLN_Zero(config.hidden_size)
         self.scale_and_shift_img3 = AdaLN_Zero(config.hidden_size)
+
+        self.rope = RoPE(config.hidden_size // config.num_attention_heads)
 
     def forward(
         self,
@@ -35,8 +39,15 @@ class MMDiTBlock(nn.Module):
         image_token: torch.Tensor,
         time_emb: torch.Tensor,
     ):
-        task_token_norm = self.layer_norm_task(task_token)
-        image_token_norm = self.layer_norm_image(image_token)
+        # Apply RoPE to task_token
+        pos_emb_task = self.rope.get_pos_emb(task_token) # this returns (sin_emb, cos_emb)
+        x1 = self.rope.apply_rotary_pos_emb(task_token, pos_emb_task)
+        
+        pos_emb_image = self.rope.get_pos_emb(image_token) # this returns (sin_emb, cos_emb)
+        x2 = self.rope.apply_rotary_pos_emb(image_token, pos_emb_image)
+        
+        task_token_norm = self.layer_norm_task(x1)
+        image_token_norm = self.layer_norm_image(x2)
 
         # shift & scale 1
         task_mod, task_gate = self.scale_and_shift_task1(task_token_norm, time_emb)
@@ -55,7 +66,7 @@ class MMDiTBlock(nn.Module):
         # Apply gate & residual connection
         task_mod = task_mod * (1 + task_gate.unsqueeze(1)) + task_token
         image_mod = image_mod * (1 + image_gate.unsqueeze(1)) + image_token
-        
+
         task_mlp = self.mlp_task(task_mod)
         image_mlp = self.mlp_image(image_mod)
 
@@ -66,7 +77,7 @@ class MMDiTBlock(nn.Module):
         # Apply gate & residual connection
         task_mod = task_mod * (1 + task_gate.unsqueeze(1)) + task_token
         image_mod = image_mod * (1 + image_gate.unsqueeze(1)) + image_token
-        
+
         return task_token, image_token  # Placeholder for actual output
 
 
@@ -84,16 +95,3 @@ class AdaLN_Zero(nn.Module):
         ), x1_gate  # 2 outputs: modulated x1 and gate for x1
 
 
-
-class MLP(nn.Module):
-    def __init__(self, hidden_size, mlp_ratio=4.0):
-        super().__init__()
-        self.fc1 = nn.Linear(hidden_size, int(hidden_size * mlp_ratio))
-        self.act = nn.GELU()
-        self.fc2 = nn.Linear(int(hidden_size * mlp_ratio), hidden_size)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.fc2(x)
-        return x
