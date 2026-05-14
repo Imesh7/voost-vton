@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 
-from solver import Solver
+from unified_dit.solver import Solver
 from unified_dit.mm_dit_block.mm_dit_block import MMDiTBlock
 from unified_dit.single_dit_block.single_dit_block import SingleDITBlock
 
@@ -18,6 +18,7 @@ class UnifiedDiT(nn.Module):
         
 
     # While inference
+    @torch.inference_mode()
     def sample(self, task_token, image_token, timesteps):
         # Procee input function needed to create
         time_emb = self.time_embed(timesteps)

@@ -10,8 +10,9 @@ Unofficial paper implementation of Voost paper - Virtual try-on & try-off
 
 ## Features
 
-- MM-DiT block
-- Single DiT block
+- DiT Blocks
+  - MM-DiT block
+  - Single DiT block
 - flow matching
 
 ## Citation
